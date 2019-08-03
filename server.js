@@ -2,35 +2,61 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-fs.readFile('./pocket_export.html', 'utf8', function(err, contents) {
+function allPocketUrls() {
+  const results = [];
+  contents = fs.readFileSync('./pocket_export.html', 'utf8');
   const $ = cheerio.load(contents);
   $('a').each((i, elm) => {
     const date = new Date($(elm).attr('time_added') * 1000);
-    // console.log('href', $(elm).attr('href'), 'time_added', date, 'tags', $(elm).attr('tags'));
+    results.push({
+      url: $(elm).attr('href'),
+      time_added: date,
+      tags: $(elm).attr('tags'),
+    })
   });
-});
+  return results;
+}
 
-grabPageMetadataForUrl('https://aws.amazon.com/blogs/architecture/ten-things-serverless-architects-should-know/')
-  .then((result)=>{
-    console.log('Title:', result.title);
-  }).catch(function (error) {
-    console.error(error);
-  });
+async function processAll(urls) {
+  const len = urls.length;
+  for (let i = 0; i < len; i += 1) {
+    try {
+      const pageMetadata = await grabPageMetadataForUrl(urls[i].url)
+      console.log(`${pageMetadata.httpStatusCode} #${i} of ${len-1} ${urls[i].url}\n  imageUrl: ${pageMetadata.imageUrl}\n  title: ${pageMetadata.title}\n  description: ${pageMetadata.description}\n`);
+    } catch(err) {
+      console.log(`${i} ${urls[i].url}\n  ERROR: ${err.response.status}\n`);
+    }
+  }
+}
 
 async function grabPageMetadataForUrl(url) {
-  console.log('Fetching', url); 
   return axios.get(url)
     .then(function (response) {
       const $ = cheerio.load(response.data);
-      // const allMetas = $('head').children().length;
-      // console.log('TITLE:', $('title').text());
-      // console.log('og:url:', $('meta[property="og:url"]').attr('content'));
-      // console.log('og:image:', $('meta[property="og:image"]').attr('content'));
-      // console.log('og:description:', $('meta[property="og:description"]').attr('content'));
       return {
-        title: $('title').text()
+        httpStatusCode: response.status,
+        title: $('title').text(),
+        url: $('meta[property="og:url"]').attr('content'),
+        imageUrl: $('meta[property="og:image"]').attr('content'),
+        description: $('meta[property="og:description"]').attr('content'),
+        excerpt: '',
       };
+    }).catch((err)=> {
+      if (err.response) {
+        return {
+          httpStatusCode: err.response.status,
+          url,
+        }
+      }
+
+      return {
+        httpStatusCode: 504,
+        url,
+      }
     });
 }
 
-
+console.time('process-all');
+processAll(allPocketUrls()).then(() => {
+  console.timeEnd('process-all');
+});
