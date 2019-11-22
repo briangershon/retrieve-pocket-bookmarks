@@ -1,4 +1,4 @@
-# parse-a-page
+# retrieve-pocket-bookmarks
 
 Retrieves your bookmarks and meta data from Pocket API.
 
