@@ -1,62 +1,56 @@
+// OAuth with Pocket and get an Access Token
+
+// from https://stackoverflow.com/questions/32986314/retrieving-data-from-pocket-api-oauth
+
+const dotenv = require('dotenv');
+dotenv.config();
+
+const CONSUMER_KEY = process.env.CONSUMER_KEY;
+
+const express = require('express');
+const session = require('express-session');
+const Grant = require('grant-express');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const fs = require('fs');
 
-function allPocketUrls() {
-  const results = [];
-  contents = fs.readFileSync('./pocket_export.html', 'utf8');
-  const $ = cheerio.load(contents);
-  $('a').each((i, elm) => {
-    const date = new Date($(elm).attr('time_added') * 1000);
-    results.push({
-      url: $(elm).attr('href'),
-      time_added: date,
-      tags: $(elm).attr('tags'),
+var options = {
+  server: {protocol:'http', host:'localhost:3000'},
+  getpocket: { key: CONSUMER_KEY, callback: '/getpocket_callback' }
+}
+
+const grant = new Grant(options);
+
+const app = express();
+app.use(session({ secret: 'secret' }));
+app.use(grant);
+
+app.get('/getpocket_callback', function (req, res) {
+  console.log(req.query);
+  const accessToken = req.query.access_token;
+
+  const count = 10000;
+  console.log(`About to retrieve (up to ${count}) bookmarks from getpocket.com...`);
+  axios.post('https://getpocket.com/v3/get', {
+      consumer_key: CONSUMER_KEY,
+      access_token: accessToken,
+      state: 'all',
+      contentType: 'article',
+      sort: 'newest',
+      detailType: 'complete',
+      // since: new Date('2013-01-01').getTime() / 1000,
+      count
     })
-  });
-  return results;
-}
-
-async function processAll(urls) {
-  const len = urls.length;
-  for (let i = 0; i < len; i += 1) {
-    try {
-      const pageMetadata = await grabPageMetadataForUrl(urls[i].url)
-      console.log(`${pageMetadata.httpStatusCode} #${i} of ${len-1} ${urls[i].url}\n  imageUrl: ${pageMetadata.imageUrl}\n  title: ${pageMetadata.title}\n  description: ${pageMetadata.description}\n`);
-    } catch(err) {
-      console.log(`${i} ${urls[i].url}\n  ERROR: ${err.response.status}\n`);
-    }
-  }
-}
-
-async function grabPageMetadataForUrl(url) {
-  return axios.get(url)
     .then(function (response) {
-      const $ = cheerio.load(response.data);
-      return {
-        httpStatusCode: response.status,
-        title: $('title').text(),
-        url: $('meta[property="og:url"]').attr('content'),
-        imageUrl: $('meta[property="og:image"]').attr('content'),
-        description: $('meta[property="og:description"]').attr('content'),
-        excerpt: '',
-      };
-    }).catch((err)=> {
-      if (err.response) {
-        return {
-          httpStatusCode: err.response.status,
-          url,
-        }
-      }
-
-      return {
-        httpStatusCode: 504,
-        url,
-      }
+      // console.log('response', response.data);
+      console.log('response keys', Object.keys(response.data.list))
+      // console.log('response', JSON.stringify(response.data));
+    })
+    .catch(function (err) {
+      console.log('error', err);
     });
-}
 
-console.time('process-all');
-processAll(allPocketUrls()).then(() => {
-  console.timeEnd('process-all');
-});
+  res.end(JSON.stringify(req.query, null, 2));
+})
+
+app.listen(3000, function () {
+  console.log('Express server listening on port ' + 3000);
+})
